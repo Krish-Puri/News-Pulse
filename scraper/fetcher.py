@@ -1,10 +1,16 @@
 """
 Fetcher module — retrieves RSS feeds and extracts full article body text.
+Includes graceful fallback to feed summaries if trafilatura extraction is unavailable.
 """
 
 import logging
 import feedparser
-import trafilatura
+
+try:
+    import trafilatura
+except ImportError:
+    trafilatura = None
+
 from feeds import FEEDS
 from normalizer import normalize_article
 
@@ -35,7 +41,7 @@ def extract_article_body(url):
     Extract full text content from an article page using trafilatura.
     Returns (body_text, extraction_ok).
     """
-    if not url:
+    if not url or trafilatura is None:
         return "", False
     
     try:

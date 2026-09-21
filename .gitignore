@@ -42,3 +42,4 @@ npm-debug.log*
 # Misc
 .vercel
 .render
+.neon
