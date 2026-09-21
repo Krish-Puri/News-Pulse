@@ -75,6 +75,13 @@ export function calculateClusterPosition(cluster, activeSources, windowStartStr,
 }
 
 /**
+ * Calculates tick mark X position for an article inside a cluster bar.
+ */
+export function calculateArticleTickPosition(publishedAt, windowStartStr, windowEndStr, width) {
+  return timeToX(publishedAt, windowStartStr, windowEndStr, width);
+}
+
+/**
  * Generates array of hourly tick objects for the time axis header.
  */
 export function generateHourlyTicks(windowStartStr, windowEndStr, width) {
