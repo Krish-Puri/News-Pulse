@@ -1,6 +1,6 @@
 """
 RSS Feed configuration for News Pulse.
-Each feed has a name, URL, source label, and color for the frontend.
+Each feed has a name, primary URL, fallbacks, source label, and color for the frontend.
 """
 
 FEEDS = [
@@ -18,11 +18,11 @@ FEEDS = [
     },
     {
         "name": "Reuters",
-        "url": "https://www.reutersagency.com/feed/?taxonomy=best-topics&post_type=best",
+        "url": "https://news.google.com/rss/search?q=site:reuters.com&hl=en-US&gl=US&ceid=US:en",
         "source_label": "Reuters",
         "color": "#D97706",
         "fallback_urls": [
-            "https://news.google.com/rss/search?q=site:reuters.com&hl=en-US&gl=US&ceid=US:en"
+            "https://news.google.com/rss/search?q=reuters+world&hl=en-US&gl=US&ceid=US:en"
         ]
     },
     {

@@ -8,13 +8,23 @@ const PYTHON_SERVICE_URL = process.env.PYTHON_SERVICE_URL || 'http://localhost:5
 
 /**
  * POST /ingest/trigger
- * Trigger an ingestion & clustering run. Returns 409 if a job is already running.
+ * Trigger an ingestion & clustering run. Returns 409 if a job is currently active.
+ * Automatically cleans up stale jobs created > 3 minutes ago.
  */
 router.post('/trigger', async (req, res) => {
   try {
-    // 1. Check for active (pending or running) ingestion job
+    // 1. Cleanup stale jobs stuck in pending or running for > 3 minutes
+    const staleCleanupQuery = `
+      UPDATE ingestion_jobs
+      SET status = 'failed', error_message = 'Job timed out after 3 minutes of inactivity'
+      WHERE status IN ('pending', 'running')
+        AND created_at < NOW() - INTERVAL '3 minutes';
+    `;
+    await db.query(staleCleanupQuery);
+
+    // 2. Check for active (pending or running) ingestion job
     const activeCheckQuery = `
-      SELECT id, status FROM ingestion_jobs
+      SELECT id, status, created_at FROM ingestion_jobs
       WHERE status IN ('pending', 'running')
       ORDER BY created_at DESC
       LIMIT 1;
@@ -30,26 +40,25 @@ router.post('/trigger', async (req, res) => {
       });
     }
 
-    // 2. Create new pending job record
+    // 3. Create new pending job record
     const jobId = uuidv4();
     const insertJobQuery = `
       INSERT INTO ingestion_jobs (id, status, step, step_number, progress, started_at)
-      VALUES ($1, 'pending', 'Initializing', 0, 0, NOW())
+      VALUES ($1, 'pending', 'Fetching feeds', 1, 10, NOW())
       RETURNING id, status;
     `;
     await db.query(insertJobQuery, [jobId]);
 
-    // 3. Trigger Python service asynchronously (retry loop to tolerate cold starts)
+    // 4. Trigger Python service asynchronously (retry loop to tolerate cold starts)
     const triggerPythonService = async (attempt = 1) => {
       try {
-        console.log(`Triggering Python service (Attempt ${attempt}) for job ${jobId}...`);
+        console.log(`[INGEST] Triggering Python service (Attempt ${attempt}) for job ${jobId}...`);
         await axios.post(`${PYTHON_SERVICE_URL}/run`, { jobId }, { timeout: 45000 });
       } catch (err) {
-        console.warn(`Python service trigger attempt ${attempt} warning/error: ${err.message}`);
+        console.warn(`[INGEST] Python trigger attempt ${attempt} warning/error: ${err.message}`);
         if (attempt < 3) {
           setTimeout(() => triggerPythonService(attempt + 1), 3000);
         } else {
-          // Record failure if unreachable after retries
           await db.query(
             `UPDATE ingestion_jobs SET status = 'failed', error_message = $1 WHERE id = $2 AND status = 'pending'`,
             [`Python scraper service unreachable: ${err.message}`, jobId]

@@ -1,9 +1,10 @@
 """
-Fetcher module — retrieves RSS feeds and extracts full article body text.
-Includes graceful fallback to feed summaries if trafilatura extraction is unavailable.
+Fetcher module — retrieves RSS feeds with explicit timeouts and extracts article body text.
+Includes resilient fallback to feed summaries if trafilatura body extraction fails or times out.
 """
 
 import logging
+import requests
 import feedparser
 
 try:
@@ -16,29 +17,38 @@ from normalizer import normalize_article
 
 logger = logging.getLogger("newspulse.fetcher")
 
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+}
+
 def fetch_feed_entries(feed_config):
     """
-    Fetch and parse a single RSS feed.
+    Fetch and parse a single RSS feed with explicit 10s timeout.
     Tries primary URL first, followed by fallbacks if provided.
     """
     urls_to_try = [feed_config["url"]] + feed_config.get("fallback_urls", [])
     
     for url in urls_to_try:
         try:
-            logger.info(f"Fetching RSS feed for {feed_config['source_label']}: {url}")
-            feed = feedparser.parse(url)
-            if feed.entries and len(feed.entries) > 0:
-                logger.info(f"Successfully fetched {len(feed.entries)} entries from {feed_config['source_label']}")
-                return feed.entries
-        except Exception as e:
-            logger.warning(f"Failed to fetch feed {url}: {e}")
+            logger.info(f"[INGEST] Fetching {feed_config['source_label']}: {url}")
+            resp = requests.get(url, headers=HEADERS, timeout=10)
             
-    logger.error(f"All feed URLs failed for {feed_config['source_label']}")
+            if resp.status_code == 200 and resp.content:
+                feed = feedparser.parse(resp.content)
+                if feed.entries and len(feed.entries) > 0:
+                    logger.info(f"[INGEST] {feed_config['source_label']} returned {len(feed.entries)} items (HTTP {resp.status_code})")
+                    return feed.entries
+            else:
+                logger.warning(f"[INGEST] {feed_config['source_label']} returned HTTP {resp.status_code} for {url}")
+        except Exception as e:
+            logger.warning(f"[INGEST] Exception fetching {feed_config['source_label']} ({url}): {e}")
+            
+    logger.error(f"[INGEST] All feed URLs failed for {feed_config['source_label']}")
     return []
 
 def extract_article_body(url):
     """
-    Extract full text content from an article page using trafilatura.
+    Extract full text content from an article page using trafilatura with safety timeout.
     Returns (body_text, extraction_ok).
     """
     if not url or trafilatura is None:
@@ -60,12 +70,13 @@ def extract_article_body(url):
             return extracted.strip(), True
         return "", False
     except Exception as e:
-        logger.warning(f"Trafilatura extraction exception for {url}: {e}")
+        logger.warning(f"[INGEST] Trafilatura extraction exception for {url}: {e}")
         return "", False
 
 def fetch_and_normalize_all(progress_callback=None):
     """
     Fetch articles from all configured feeds, normalize them, and extract body text.
+    Tolerates individual feed failures gracefully.
     Calls progress_callback(step_name, step_num, percent) if provided.
     """
     all_normalized = []
@@ -73,7 +84,7 @@ def fetch_and_normalize_all(progress_callback=None):
     
     for i, feed_config in enumerate(FEEDS):
         if progress_callback:
-            percent = int(10 + (i / total_feeds) * 35)
+            percent = int(10 + (i / total_feeds) * 25)
             progress_callback("Fetching feeds", 1, percent)
             
         entries = fetch_feed_entries(feed_config)
@@ -82,18 +93,23 @@ def fetch_and_normalize_all(progress_callback=None):
             if norm:
                 all_normalized.append(norm)
                 
-    # Extract body text for articles
     total_articles = len(all_normalized)
-    logger.info(f"Starting body text extraction for {total_articles} articles...")
+    logger.info(f"[INGEST] Fetch complete. Total normalized articles: {total_articles}")
+    
+    # Body extraction phase (capped for performance)
+    articles_to_extract = all_normalized[:40]
     
     for i, article in enumerate(all_normalized):
         if progress_callback and total_articles > 0:
-            percent = int(10 + (i / total_articles) * 40)
+            percent = int(35 + (i / total_articles) * 25)
             progress_callback("Extracting articles", 2, percent)
             
-        # Extract body text (optional fallback to summary if fails)
-        body_text, ok = extract_article_body(article["url"])
-        article["body_text"] = body_text if ok else article["description"]
-        article["extraction_ok"] = ok
-        
+        if i < len(articles_to_extract):
+            body_text, ok = extract_article_body(article["url"])
+            article["body_text"] = body_text if ok else article["description"]
+            article["extraction_ok"] = ok
+        else:
+            article["body_text"] = article["description"]
+            article["extraction_ok"] = False
+            
     return all_normalized
