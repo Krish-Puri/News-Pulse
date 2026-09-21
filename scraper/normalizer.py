@@ -1,40 +1,58 @@
 """
 Article normalizer — cleans and standardizes fields from different RSS feeds.
+Includes graceful standard library fallbacks for bs4 and python-dateutil.
 """
 
 import re
 from datetime import datetime, timezone
-from dateutil import parser as dateparser
-from bs4 import BeautifulSoup
+
+try:
+    from dateutil import parser as dateparser
+except ImportError:
+    dateparser = None
+
+try:
+    from bs4 import BeautifulSoup
+except ImportError:
+    BeautifulSoup = None
 
 
 def strip_html(text):
     """Remove HTML tags from text, returning plain text."""
     if not text:
         return ""
-    soup = BeautifulSoup(text, "html.parser")
-    return soup.get_text(separator=" ", strip=True)
+    if BeautifulSoup is not None:
+        try:
+            soup = BeautifulSoup(text, "html.parser")
+            return soup.get_text(separator=" ", strip=True)
+        except Exception:
+            pass
+    # Standard library regex fallback if bs4 is missing or fails
+    clean = re.sub(r"<[^>]+>", " ", text)
+    return " ".join(clean.split())
 
 
 def parse_date(date_str):
     """
     Parse a date string into a timezone-aware UTC datetime.
     Handles RFC 2822, ISO 8601, and various RSS date formats.
-    Falls back to current UTC time if parsing fails.
+    Falls back to current UTC time if parsing fails or dateutil is unavailable.
     """
     if not date_str:
         return datetime.now(timezone.utc)
     
-    try:
-        dt = dateparser.parse(date_str)
-        if dt is None:
-            return datetime.now(timezone.utc)
-        # Make timezone-aware if naive
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt
-    except (ValueError, OverflowError):
-        return datetime.now(timezone.utc)
+    if dateparser is not None:
+        try:
+            dt = dateparser.parse(date_str)
+            if dt is not None:
+                # Make timezone-aware if naive
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt
+        except (ValueError, OverflowError, Exception):
+            pass
+
+    return datetime.now(timezone.utc)
 
 
 def normalize_article(entry, feed_config):
@@ -57,15 +75,17 @@ def normalize_article(entry, feed_config):
         return None
     
     # Get description from various possible fields
-    description_raw = (
-        entry.get("summary")
-        or entry.get("description")
-        or entry.get("content", [{}])[0].get("value", "") if entry.get("content") else ""
-        or ""
-    )
+    description_raw = ""
+    if entry.get("summary"):
+        description_raw = entry.get("summary")
+    elif entry.get("description"):
+        description_raw = entry.get("description")
+    elif entry.get("content") and len(entry.get("content")) > 0:
+        description_raw = entry.get("content")[0].get("value", "")
+
     description = strip_html(description_raw).strip()
     
-    # Truncate very long descriptions (some feeds include full body)
+    # Truncate very long descriptions
     if len(description) > 1000:
         description = description[:997] + "..."
     
