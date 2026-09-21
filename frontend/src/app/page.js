@@ -22,6 +22,7 @@ export default function HomePage() {
   const [selectedClusterId, setSelectedClusterId] = useState(null);
   const [activeJobId, setActiveJobId] = useState(null);
   const [lastStats, setLastStats] = useState(null);
+  const [refreshError, setRefreshError] = useState(null);
   const [useMockMode, setUseMockMode] = useState(false);
 
   // 1. Timeline Data Query
@@ -74,6 +75,7 @@ export default function HomePage() {
       queryClient.invalidateQueries({ queryKey: ['timeline'] });
       setActiveJobId(null);
     } else if (jobStatusData?.status === 'failed') {
+      setRefreshError(jobStatusData.error || 'Ingestion job failed.');
       setActiveJobId(null);
     }
   }, [jobStatusData, queryClient]);
@@ -83,7 +85,6 @@ export default function HomePage() {
     setActiveSources(prev => {
       const next = new Set(prev);
       if (next.has(sourceId)) {
-        // Keep at least one active source or allow deselecting
         if (next.size > 1) next.delete(sourceId);
       } else {
         next.add(sourceId);
@@ -101,12 +102,14 @@ export default function HomePage() {
   const handleRefreshClick = async () => {
     try {
       setLastStats(null);
+      setRefreshError(null);
       const res = await triggerIngestion();
       if (res.jobId) {
         setActiveJobId(res.jobId);
       }
     } catch (err) {
       console.error('Failed to trigger refresh:', err);
+      setRefreshError(err.message || 'Unable to connect to News Pulse API. Please verify the backend service is running.');
     }
   };
 
@@ -137,6 +140,21 @@ export default function HomePage() {
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6 md:px-6 flex flex-col gap-4">
+        {/* Refresh / Ingestion Network Error Banner */}
+        {refreshError && (
+          <div className="w-full bg-red-950/60 border border-red-500/50 rounded-xl p-4 my-2 flex items-center justify-between text-sm text-red-200 animate-slide-down">
+            <span className="flex items-center gap-2">
+              <span className="text-red-400 font-bold">⚠️ Connection Error:</span> {refreshError}
+            </span>
+            <button
+              onClick={() => setRefreshError(null)}
+              className="text-xs font-semibold text-red-400 hover:text-white underline ml-4"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
         {/* Ingestion Stepper Progress */}
         {isIngesting && (
           <IngestionStepper jobStatus={jobStatusData} />

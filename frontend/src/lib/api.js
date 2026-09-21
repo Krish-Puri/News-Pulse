@@ -47,21 +47,37 @@ export async function fetchClusterDetail(clusterId) {
 
 /**
  * Trigger POST /ingest/trigger.
+ * Handles network failures cleanly and attaches to existing job if 409 Conflict.
  */
 export async function triggerIngestion() {
-  const res = await fetch(`${API_BASE_URL}/ingest/trigger`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' }
-  });
-  
-  const data = await res.json();
-  if (res.status === 409) {
-    return { ...data, isConflict: true };
+  try {
+    const res = await fetch(`${API_BASE_URL}/ingest/trigger`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (res.status === 409) {
+      return {
+        jobId: data.existingJobId,
+        status: data.status || 'running',
+        isConflict: true,
+        message: data.error || 'An ingestion job is already in progress'
+      };
+    }
+
+    if (!res.ok) {
+      throw new Error(data.error || `Ingestion trigger failed with HTTP ${res.status}`);
+    }
+
+    return data;
+  } catch (err) {
+    if (err.name === 'TypeError' || err.message.includes('fetch')) {
+      throw new Error(`Unable to connect to News Pulse API at ${API_BASE_URL}. Please ensure the Node backend service is running.`);
+    }
+    throw err;
   }
-  if (!res.ok) {
-    throw new Error(data.error || `Ingestion trigger failed with status ${res.status}`);
-  }
-  return data;
 }
 
 /**
@@ -69,9 +85,16 @@ export async function triggerIngestion() {
  */
 export async function fetchIngestionStatus(jobId) {
   if (!jobId) return null;
-  const res = await fetch(`${API_BASE_URL}/ingest/status/${jobId}`);
-  if (!res.ok) {
-    throw new Error(`Ingestion status check failed with status ${res.status}`);
+  try {
+    const res = await fetch(`${API_BASE_URL}/ingest/status/${jobId}`);
+    if (!res.ok) {
+      throw new Error(`Ingestion status check failed with HTTP ${res.status}`);
+    }
+    return await res.json();
+  } catch (err) {
+    if (err.name === 'TypeError' || err.message.includes('fetch')) {
+      throw new Error(`Unable to connect to News Pulse API at ${API_BASE_URL}.`);
+    }
+    throw err;
   }
-  return await res.json();
 }
