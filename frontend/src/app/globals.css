@@ -1,66 +1,149 @@
 @import "tailwindcss";
 
+@theme {
+  /* ── Light Editorial Palette ── */
+  --color-bg-primary: #FFFFFF;
+  --color-bg-secondary: #F9FAFB;
+  --color-bg-tertiary: #F3F4F6;
+  --color-bg-card: #FFFFFF;
+  --color-bg-hover: #F3F4F6;
+  --color-bg-selected: #F8FAFC;
+  --color-bg-overlay: rgba(0, 0, 0, 0.4);
+
+  --color-border-primary: #E5E7EB;
+  --color-border-secondary: #F3F4F6;
+  --color-border-active: #D1D5DB;
+
+  --color-text-primary: #111827;
+  --color-text-secondary: #6B7280;
+  --color-text-muted: #9CA3AF;
+  --color-text-inverse: #FFFFFF;
+
+  --color-accent-red: #DC2626;
+  --color-accent-blue: #2563EB;
+  --color-accent-amber: #D97706;
+  --color-accent-emerald: #059669;
+
+  /* Source Colors */
+  --color-source-bbc: #DC2626;
+  --color-source-npr: #2563EB;
+  --color-source-reuters: #D97706;
+  --color-source-guardian: #059669;
+
+  /* ── Typography ── */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+
+  /* ── Transitions ── */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
 @layer base {
-  :root {
-    --bg-primary: #0B0F17;
-    --bg-secondary: #111827;
-    --bg-card: #1F2937;
-    --border-color: #374151;
-    --text-primary: #F9FAFB;
-    --text-secondary: #9CA3AF;
-    --text-muted: #6B7280;
-    --accent-red: #EF4444;
-    --accent-blue: #3B82F6;
-    --accent-amber: #F59E0B;
-    --accent-emerald: #10B981;
+  body {
+    background-color: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
-  body {
-    background-color: var(--bg-primary);
-    color: var(--text-primary);
-    font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif);
-    overflow-x: hidden;
+  /* Focus styles for accessibility */
+  :focus-visible {
+    outline: 2px solid var(--color-accent-red);
+    outline-offset: 2px;
+    border-radius: 4px;
   }
 }
 
-/* Custom Scrollbars */
+/* ── Custom Scrollbars (light) ── */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #0B0F17;
+  background: var(--color-bg-secondary);
 }
 ::-webkit-scrollbar-thumb {
-  background: #374151;
+  background: #D1D5DB;
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #4B5563;
+  background: #9CA3AF;
 }
 
-/* Skeleton Shimmer Animation */
+/* ── Animations ── */
+
+/* Skeleton shimmer */
 @keyframes shimmer {
-  0% {
-    background-position: -200% 0;
-  }
-  100% {
-    background-position: 200% 0;
-  }
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
 }
-
 .animate-shimmer {
-  background: linear-gradient(90deg, #1F2937 25%, #374151 37%, #1F2937 63%);
+  background: linear-gradient(90deg, #F3F4F6 25%, #E5E7EB 37%, #F3F4F6 63%);
   background-size: 200% 100%;
   animation: shimmer 1.8s infinite ease-in-out;
 }
 
-/* Pulse Glow */
+/* Pulse glow */
 @keyframes pulseGlow {
   0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.6; transform: scale(1.1); }
+  50% { opacity: 0.6; transform: scale(1.15); }
 }
-
 .animate-pulse-glow {
   animation: pulseGlow 2s infinite ease-in-out;
+}
+
+/* Slide down entry */
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-slide-down {
+  animation: slideDown 0.3s ease-out forwards;
+}
+
+/* Slide left entry (drawer) */
+@keyframes slideLeft {
+  from { opacity: 0; transform: translateX(100%); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.animate-slide-left {
+  animation: slideLeft 0.25s ease-out forwards;
+}
+
+/* Slide up entry (bottom sheet) */
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+.animate-slide-up {
+  animation: slideUp 0.3s var(--ease-spring) forwards;
+}
+
+/* Fade in */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-out forwards;
+}
+
+/* Subtle pulse for ingestion */
+@keyframes pulseSubtle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.85; }
+}
+.animate-pulse-subtle {
+  animation: pulseSubtle 2s infinite ease-in-out;
+}
+
+/* Spin */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.animate-spin-slow {
+  animation: spin 1.5s linear infinite;
 }

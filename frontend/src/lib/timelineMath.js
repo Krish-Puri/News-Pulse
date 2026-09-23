@@ -1,16 +1,17 @@
 /**
  * Pure temporal & spatial math utilities for timeline rendering.
+ * All functions are deterministic, stateless, and testable.
  */
 
 /**
  * Maps a date string/timestamp to an X coordinate (0 to width).
  */
 export function timeToX(timeStr, windowStartStr, windowEndStr, width) {
-  const t = new Date(timeStr).getTime();
-  const start = new Date(windowStartStr).getTime();
-  const end = new Date(windowEndStr).getTime();
+  const t = typeof timeStr === 'number' ? timeStr : new Date(timeStr).getTime();
+  const start = typeof windowStartStr === 'number' ? windowStartStr : new Date(windowStartStr).getTime();
+  const end = typeof windowEndStr === 'number' ? windowEndStr : new Date(windowEndStr).getTime();
   if (end <= start || isNaN(t) || isNaN(start) || isNaN(end)) return 0;
-  
+
   const ratio = Math.max(0, Math.min(1, (t - start) / (end - start)));
   return ratio * width;
 }
@@ -22,7 +23,7 @@ export function xToTime(x, windowStartStr, windowEndStr, width) {
   const start = new Date(windowStartStr).getTime();
   const end = new Date(windowEndStr).getTime();
   if (width <= 0) return new Date(start);
-  
+
   const ratio = Math.max(0, Math.min(1, x / width));
   return new Date(start + ratio * (end - start));
 }
@@ -34,14 +35,13 @@ export function xToTime(x, windowStartStr, windowEndStr, width) {
  */
 export function calculateClusterPosition(cluster, activeSources, windowStartStr, windowEndStr, width) {
   const allArticles = cluster.articles || [];
-  
-  // Filter articles by active sources if activeSources Set is provided
+
+  // Filter articles by active sources
   const visibleArticles = activeSources && activeSources.size > 0
     ? allArticles.filter(a => activeSources.has(a.source))
     : allArticles;
-    
+
   if (visibleArticles.length === 0) {
-    // If no articles visible, fallback to cluster default bounds with 0 visible count
     const startX = timeToX(cluster.startTime, windowStartStr, windowEndStr, width);
     const endX = timeToX(cluster.endTime, windowStartStr, windowEndStr, width);
     return {
@@ -56,7 +56,7 @@ export function calculateClusterPosition(cluster, activeSources, windowStartStr,
 
   // Find min and max publishedAt among VISIBLE articles
   const times = visibleArticles.map(a => new Date(a.publishedAt).getTime()).filter(t => !isNaN(t));
-  
+
   const minTime = times.length > 0 ? Math.min(...times) : new Date(cluster.startTime).getTime();
   const maxTime = times.length > 0 ? Math.max(...times) : new Date(cluster.endTime).getTime();
 
@@ -87,7 +87,7 @@ export function calculateArticleTickPosition(publishedAt, windowStartStr, window
 export function generateHourlyTicks(windowStartStr, windowEndStr, width) {
   const start = new Date(windowStartStr);
   const end = new Date(windowEndStr);
-  
+
   if (isNaN(start.getTime()) || isNaN(end.getTime())) return [];
 
   // Align start to the beginning of the hour
@@ -106,6 +106,52 @@ export function generateHourlyTicks(windowStartStr, windowEndStr, width) {
   }
 
   return ticks;
+}
+
+/**
+ * Builds coverage histogram data from clusters + active sources.
+ * Returns array of { hour: ISO string, count: number } bucketed by hour.
+ */
+export function buildCoverageData(clusters, activeSources, windowStartStr, windowEndStr) {
+  const start = new Date(windowStartStr);
+  const end = new Date(windowEndStr);
+
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) return [];
+
+  // Create hourly buckets
+  const buckets = new Map();
+  const cursor = new Date(start);
+  cursor.setMinutes(0, 0, 0);
+
+  while (cursor <= end) {
+    if (cursor >= start) {
+      buckets.set(cursor.toISOString(), 0);
+    }
+    cursor.setHours(cursor.getHours() + 1);
+  }
+
+  // Count visible articles per hourly bucket
+  for (const cluster of clusters) {
+    const articles = cluster.articles || [];
+    for (const article of articles) {
+      if (activeSources && activeSources.size > 0 && !activeSources.has(article.source)) {
+        continue;
+      }
+      const t = new Date(article.publishedAt);
+      if (isNaN(t.getTime())) continue;
+
+      // Floor to hour
+      const hourKey = new Date(t);
+      hourKey.setMinutes(0, 0, 0);
+      const key = hourKey.toISOString();
+
+      if (buckets.has(key)) {
+        buckets.set(key, buckets.get(key) + 1);
+      }
+    }
+  }
+
+  return Array.from(buckets.entries()).map(([hour, count]) => ({ hour, count }));
 }
 
 /**
