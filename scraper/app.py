@@ -38,10 +38,28 @@ def run_ingestion():
     if not job_id:
         return jsonify({"error": "jobId is required"}), 400
 
-    # Check Python idempotency (avoid duplicate execution from retries)
+    # Quick in-memory optimization — avoids redundant DB query on retries
     if job_id in PROCESSED_JOBS:
-        logger.info(f"Job {job_id} is already processed or processing in Python service.")
+        logger.info(f"Job {job_id} is already processed or processing (in-memory cache hit).")
         return jsonify({"message": "Job already processing", "jobId": job_id}), 200
+
+    # PostgreSQL is the source of truth for job idempotency
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT status FROM ingestion_jobs WHERE id = %s",
+            (job_id,)
+        )
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row and row[0] in ("running", "completed"):
+            PROCESSED_JOBS.add(job_id)
+            logger.info(f"Job {job_id} already has DB status '{row[0]}' — skipping.")
+            return jsonify({"message": f"Job already {row[0]}", "jobId": job_id}), 200
+    except Exception as e:
+        logger.warning(f"DB idempotency check failed for {job_id}: {e}")
 
     PROCESSED_JOBS.add(job_id)
     

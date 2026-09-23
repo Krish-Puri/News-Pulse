@@ -2,6 +2,7 @@ export const MOCK_TIMELINE_DATA = {
   meta: {
     totalArticles: 56,
     totalClusters: 10,
+    sourceCount: 4,
     sources: ['BBC', 'NPR', 'Reuters', 'Guardian'],
     windowStart: '2026-09-21T05:00:00Z',
     windowEnd: '2026-09-21T19:00:00Z',

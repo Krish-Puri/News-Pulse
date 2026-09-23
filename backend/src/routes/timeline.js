@@ -44,6 +44,11 @@ router.get('/', async (req, res) => {
 
     meta.sources = sourcesList;
 
+    // Count total clusters
+    const clusterCountQuery = `SELECT COUNT(*)::int AS count FROM clusters;`;
+    const clusterCountRes = await db.query(clusterCountQuery);
+    meta.totalClusters = clusterCountRes.rows[0]?.count || 0;
+
     // 3. Fetch timeline clusters
     const clustersQuery = `
       SELECT 

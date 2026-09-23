@@ -1,16 +1,17 @@
+/**
+ * API Client for News Pulse.
+ * Mock data fallback is DEVELOPMENT-ONLY — in production, errors propagate to the UI.
+ */
+
 import { MOCK_TIMELINE_DATA, MOCK_CLUSTER_DETAILS } from './mockData';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
-const USE_MOCK_FALLBACK = process.env.NEXT_PUBLIC_USE_MOCK === 'true' || false;
+const IS_DEV = process.env.NODE_ENV === 'development';
 
 /**
  * Fetch GET /timeline data.
  */
 export async function fetchTimeline(timeWindow = '24h') {
-  if (USE_MOCK_FALLBACK) {
-    return MOCK_TIMELINE_DATA;
-  }
-
   try {
     const res = await fetch(`${API_BASE_URL}/timeline?window=${timeWindow}`);
     if (!res.ok) {
@@ -18,8 +19,13 @@ export async function fetchTimeline(timeWindow = '24h') {
     }
     return await res.json();
   } catch (err) {
-    console.warn('Backend API unavailable, using realistic mock data fallback:', err.message);
-    return MOCK_TIMELINE_DATA;
+    // In development only, fall back to mock data so the UI is still usable
+    if (IS_DEV) {
+      console.warn('Backend API unavailable in dev, using mock data fallback:', err.message);
+      return MOCK_TIMELINE_DATA;
+    }
+    // In production, let the error propagate to TanStack Query → ErrorState
+    throw err;
   }
 }
 
@@ -29,10 +35,6 @@ export async function fetchTimeline(timeWindow = '24h') {
 export async function fetchClusterDetail(clusterId) {
   if (!clusterId) return null;
 
-  if (USE_MOCK_FALLBACK) {
-    return MOCK_CLUSTER_DETAILS[clusterId] || MOCK_CLUSTER_DETAILS[1];
-  }
-
   try {
     const res = await fetch(`${API_BASE_URL}/clusters/${clusterId}`);
     if (!res.ok) {
@@ -40,8 +42,11 @@ export async function fetchClusterDetail(clusterId) {
     }
     return await res.json();
   } catch (err) {
-    console.warn(`Backend API unavailable for cluster ${clusterId}, using mock data fallback:`, err.message);
-    return MOCK_CLUSTER_DETAILS[clusterId] || MOCK_CLUSTER_DETAILS[1];
+    if (IS_DEV) {
+      console.warn(`Backend API unavailable for cluster ${clusterId}, using mock data fallback:`, err.message);
+      return MOCK_CLUSTER_DETAILS[clusterId] || MOCK_CLUSTER_DETAILS[1];
+    }
+    throw err;
   }
 }
 
