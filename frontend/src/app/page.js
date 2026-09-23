@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import AppHeader from '../components/AppHeader';
 import SourceFilterBar from '../components/SourceFilterBar';
@@ -11,19 +11,21 @@ import SuccessBanner from '../components/SuccessBanner';
 import SkeletonTimeline from '../components/SkeletonTimeline';
 import EmptyState from '../components/EmptyState';
 import ErrorState from '../components/ErrorState';
+import MobileTimeline from '../components/MobileTimeline';
 import { SOURCES } from '../lib/constants';
 import { fetchTimeline, fetchClusterDetail, triggerIngestion, fetchIngestionStatus } from '../lib/api';
 
 export default function HomePage() {
   const queryClient = useQueryClient();
 
-  // Client UI States
+  // Client UI State
   const [activeSources, setActiveSources] = useState(() => new Set(SOURCES.map(s => s.id)));
   const [selectedClusterId, setSelectedClusterId] = useState(null);
   const [activeJobId, setActiveJobId] = useState(null);
   const [lastStats, setLastStats] = useState(null);
   const [refreshError, setRefreshError] = useState(null);
-  const [useMockMode, setUseMockMode] = useState(false);
+  const [timeWindow, setTimeWindow] = useState('24h');
+  const [sortBy, setSortBy] = useState('longest');
 
   // 1. Timeline Data Query
   const {
@@ -33,8 +35,8 @@ export default function HomePage() {
     error: timelineQueryError,
     refetch: refetchTimeline
   } = useQuery({
-    queryKey: ['timeline', useMockMode],
-    queryFn: () => fetchTimeline('24h')
+    queryKey: ['timeline', timeWindow],
+    queryFn: () => fetchTimeline(timeWindow)
   });
 
   // 2. Cluster Detail Query (Lazy fetch when drawer opens)
@@ -62,10 +64,12 @@ export default function HomePage() {
     }
   });
 
-  // Handle ingestion completion
-  useMemo(() => {
-    if (jobStatusData?.status === 'completed') {
-      // Ephemeral Cluster ID Rule: Clear drawer selection after re-clustering
+  // Handle ingestion completion — useEffect, NOT useMemo
+  useEffect(() => {
+    if (!jobStatusData) return;
+
+    if (jobStatusData.status === 'completed') {
+      // Clear drawer selection (cluster IDs are ephemeral after re-clustering)
       setSelectedClusterId(null);
       setLastStats({
         articlesNew: jobStatusData.articlesNew,
@@ -74,14 +78,14 @@ export default function HomePage() {
       // Invalidate timeline to pull fresh snapshot
       queryClient.invalidateQueries({ queryKey: ['timeline'] });
       setActiveJobId(null);
-    } else if (jobStatusData?.status === 'failed') {
+    } else if (jobStatusData.status === 'failed') {
       setRefreshError(jobStatusData.error || 'Ingestion job failed.');
       setActiveJobId(null);
     }
-  }, [jobStatusData, queryClient]);
+  }, [jobStatusData?.status, jobStatusData?.articlesNew, jobStatusData?.clustersCreated, jobStatusData?.error, queryClient]);
 
   // Toggle single source pill
-  const handleToggleSource = (sourceId) => {
+  const handleToggleSource = useCallback((sourceId) => {
     setActiveSources(prev => {
       const next = new Set(prev);
       if (next.has(sourceId)) {
@@ -91,15 +95,15 @@ export default function HomePage() {
       }
       return next;
     });
-  };
+  }, []);
 
   // Reset all sources active
-  const handleResetSources = () => {
+  const handleResetSources = useCallback(() => {
     setActiveSources(new Set(SOURCES.map(s => s.id)));
-  };
+  }, []);
 
   // Trigger ingestion workflow
-  const handleRefreshClick = async () => {
+  const handleRefreshClick = useCallback(async () => {
     try {
       setLastStats(null);
       setRefreshError(null);
@@ -111,12 +115,27 @@ export default function HomePage() {
       console.error('Failed to trigger refresh:', err);
       setRefreshError(err.message || 'Unable to connect to News Pulse API. Please verify the backend service is running.');
     }
-  };
+  }, []);
 
   // Dynamic calculations
   const clusters = timelineData?.clusters || [];
   const meta = timelineData?.meta || {};
   const sourceCounts = timelineData?.sourceCounts || {};
+
+  // Sort clusters
+  const sortedClusters = useMemo(() => {
+    const sorted = [...clusters];
+    if (sortBy === 'longest') {
+      sorted.sort((a, b) => {
+        const durationA = new Date(a.endTime).getTime() - new Date(a.startTime).getTime();
+        const durationB = new Date(b.endTime).getTime() - new Date(b.startTime).getTime();
+        return durationB - durationA;
+      });
+    } else {
+      sorted.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+    }
+    return sorted;
+  }, [clusters, sortBy]);
 
   // Calculate total visible articles across active sources
   const totalVisibleArticles = useMemo(() => {
@@ -129,7 +148,7 @@ export default function HomePage() {
   const isIngesting = !!activeJobId && (jobStatusData?.status === 'pending' || jobStatusData?.status === 'running');
 
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col font-sans selection:bg-red-500 selection:text-white">
+    <div className="min-h-screen bg-bg-primary text-text-primary flex flex-col font-sans">
       {/* App Header */}
       <AppHeader
         meta={meta}
@@ -139,23 +158,23 @@ export default function HomePage() {
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6 md:px-6 flex flex-col gap-4">
-        {/* Refresh / Ingestion Network Error Banner */}
+      <main className="flex-1 max-w-[1400px] w-full mx-auto px-4 py-5 md:px-6 flex flex-col gap-3">
+        {/* Refresh Error Banner */}
         {refreshError && (
-          <div className="w-full bg-red-950/60 border border-red-500/50 rounded-xl p-4 my-2 flex items-center justify-between text-sm text-red-200 animate-slide-down">
+          <div className="w-full bg-red-50 border border-red-200 rounded-xl p-4 my-1 flex items-center justify-between text-sm text-red-800 animate-slide-down">
             <span className="flex items-center gap-2">
-              <span className="text-red-400 font-bold">⚠️ Connection Error:</span> {refreshError}
+              <span className="font-bold">⚠ Connection Error:</span> {refreshError}
             </span>
             <button
               onClick={() => setRefreshError(null)}
-              className="text-xs font-semibold text-red-400 hover:text-white underline ml-4"
+              className="text-xs font-semibold text-red-500 hover:text-red-700 underline ml-4"
             >
               Dismiss
             </button>
           </div>
         )}
 
-        {/* Ingestion Stepper Progress */}
+        {/* Ingestion Stepper */}
         {isIngesting && (
           <IngestionStepper jobStatus={jobStatusData} />
         )}
@@ -171,12 +190,11 @@ export default function HomePage() {
         {/* Loading Skeleton */}
         {isTimelineLoading ? (
           <SkeletonTimeline />
-        ) : isTimelineError && !useMockMode ? (
+        ) : isTimelineError ? (
           /* Error State */
           <ErrorState
             error={timelineQueryError}
             onRetry={() => refetchTimeline()}
-            onUseMock={() => setUseMockMode(true)}
           />
         ) : clusters.length === 0 ? (
           /* Empty State */
@@ -191,29 +209,78 @@ export default function HomePage() {
               onResetSources={handleResetSources}
               sourceCounts={sourceCounts}
               totalVisibleArticles={totalVisibleArticles}
-              totalArticles={meta.totalArticles || 56}
+              totalArticles={meta.totalArticles || 0}
             />
 
-            {/* Custom SVG Data-Driven Timeline Canvas */}
-            <Timeline
-              clusters={clusters}
-              activeSources={activeSources}
-              windowStart={meta.windowStart || '2026-09-21T05:00:00Z'}
-              windowEnd={meta.windowEnd || '2026-09-21T19:00:00Z'}
-              selectedClusterId={selectedClusterId}
-              onSelectCluster={(id) => setSelectedClusterId(id)}
-            />
+            {/* Desktop: Custom SVG Timeline */}
+            <div className="hidden md:block">
+              <Timeline
+                clusters={sortedClusters}
+                activeSources={activeSources}
+                windowStart={meta.windowStart}
+                windowEnd={meta.windowEnd}
+                selectedClusterId={selectedClusterId}
+                onSelectCluster={(id) => setSelectedClusterId(id)}
+                timeWindow={timeWindow}
+                onChangeTimeWindow={setTimeWindow}
+                sortBy={sortBy}
+                onChangeSortBy={setSortBy}
+              />
+            </div>
+
+            {/* Mobile: Topic Cards */}
+            <div className="md:hidden">
+              <MobileTimeline
+                clusters={sortedClusters}
+                activeSources={activeSources}
+                windowStart={meta.windowStart}
+                windowEnd={meta.windowEnd}
+                selectedClusterId={selectedClusterId}
+                onSelectCluster={(id) => setSelectedClusterId(id)}
+                sortBy={sortBy}
+              />
+            </div>
           </>
         )}
       </main>
 
-      {/* Cluster Detail Slide-in Drawer */}
+      {/* Cluster Detail Drawer / Bottom Sheet */}
       {selectedClusterId && (
         <ClusterDetailDrawer
           cluster={clusterDetailData?.cluster || clusters.find(c => c.id === selectedClusterId)}
           onClose={() => setSelectedClusterId(null)}
         />
       )}
+
+      {/* Mobile Sticky Refresh Footer */}
+      <div className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-bg-primary border-t border-border-primary p-3 safe-area-bottom">
+        <button
+          onClick={handleRefreshClick}
+          disabled={isIngesting}
+          className={`w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold transition-all ${
+            isIngesting
+              ? 'bg-bg-tertiary text-text-muted cursor-not-allowed'
+              : 'bg-text-primary text-text-inverse active:scale-[0.98] shadow-sm'
+          }`}
+        >
+          {isIngesting ? (
+            <>
+              <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="32" strokeLinecap="round" />
+              </svg>
+              Ingesting...
+            </>
+          ) : (
+            <>
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+                <path d="M21 3v5h-5" />
+              </svg>
+              Refresh data
+            </>
+          )}
+        </button>
+      </div>
     </div>
   );
 }
